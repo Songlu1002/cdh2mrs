@@ -156,20 +156,23 @@ migration:
 
 ### Usage
 
-#### Basic Migration (Data Only)
+### Usage
 
-```bash
-java -jar hadoop-migration-tool-1.0.0-SNAPSHOT.jar --config conf/config.yaml
+```cmd
+bin\migration-tool.bat --config conf\config.yaml
 ```
+
+#### Options
+
+| Option | Description |
+|--------|-------------|
+| `--config <file>` | Path to configuration file |
+| `--verbose` | Enable verbose output |
+| `--help` | Show help message |
 
 #### With Metadata Migration
 
 Enable `metadata.autoConvert: true` in config to migrate both data and table definitions.
-
-#### Windows Launch Script
-
-```cmd
-bin\migration-tool.bat --config conf\config.yaml
 ```
 
 ### Migration Workflow
@@ -393,21 +396,23 @@ migration:
 
 ### 使用方法
 
-#### 基本迁移（仅数据）
-
-```bash
-java -jar hadoop-migration-tool-1.0.0-SNAPSHOT.jar --config conf/config.yaml
-```
-
-#### 启用元数据迁移
-
-在配置中设置 `metadata.autoConvert: true` 以同时迁移表结构和数据。
-
-#### Windows 启动脚本
+### 使用方法
 
 ```cmd
 bin\migration-tool.bat --config conf\config.yaml
 ```
+
+#### 选项
+
+| 选项 | 说明 |
+|------|------|
+| `--config <文件>` | 配置文件路径 |
+| `--verbose` | 启用详细输出 |
+| `--help` | 显示帮助信息 |
+
+#### 启用元数据迁移
+
+在配置中设置 `metadata.autoConvert: true` 以同时迁移表结构和数据。
 
 ### 迁移流程
 

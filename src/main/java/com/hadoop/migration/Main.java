@@ -54,14 +54,15 @@ public class Main {
         System.out.println("Hadoop Migration Tool - CDH to MRS");
         System.out.println();
         System.out.println("Usage:");
-        System.out.println("  java -jar hadoop-migration-tool.jar --config <config-file>");
+        System.out.println("  bin\\migration-tool.bat --config <config-file>");
         System.out.println();
         System.out.println("Options:");
         System.out.println("  --config <file>   Path to configuration YAML file");
+        System.out.println("  --verbose         Enable verbose output");
         System.out.println("  --help, -h        Show this help message");
         System.out.println();
         System.out.println("Example:");
-        System.out.println("  java -jar hadoop-migration-tool.jar --config conf/config.yaml");
+        System.out.println("  bin\\migration-tool.bat --config conf\\config.yaml");
     }
 
     public static void runMigration(String configPath) {
