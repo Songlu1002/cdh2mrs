@@ -7,6 +7,7 @@ public class ClusterConfig {
     private String hiveVersion;
     private String configDir;
     private HdfsConfig hdfs;
+    private KerberosConfig kerberos;
 
     // Getters and setters
     public String getName() { return name; }
@@ -26,4 +27,7 @@ public class ClusterConfig {
 
     public HdfsConfig getHdfs() { return hdfs; }
     public void setHdfs(HdfsConfig hdfs) { this.hdfs = hdfs; }
+
+    public KerberosConfig getKerberos() { return kerberos; }
+    public void setKerberos(KerberosConfig kerberos) { this.kerberos = kerberos; }
 }
