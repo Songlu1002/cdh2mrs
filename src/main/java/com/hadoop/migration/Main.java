@@ -12,14 +12,18 @@ import com.hadoop.migration.executor.DistCpExecutor;
 import com.hadoop.migration.metadata.CompatibilityTransformer;
 import com.hadoop.migration.metadata.HiveMetadataExtractor;
 import com.hadoop.migration.metadata.HiveMetadataImporter;
+import com.hadoop.migration.metadata.HiveMetadataExtractor;
 import com.hadoop.migration.model.MigrationResult;
 import com.hadoop.migration.model.MigrationStatus;
 import com.hadoop.migration.model.TableMetadata;
+import com.hadoop.migration.report.ReportGenerator;
 import com.hadoop.migration.state.JsonStateManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
     private static final Logger log = LoggerFactory.getLogger(Main.class);
@@ -98,49 +102,85 @@ public class Main {
 
             // 5. Execute migration for each task
             boolean overallSuccess = true;
-            for (MigrationTask task : config.getMigration().getTasks()) {
-                log.info("Processing database: {}", task.getDatabase());
+            HiveMetadataExtractor tableLister = null;
 
-                if (task.getTables() == null) {
-                    log.warn("No tables specified for database: {}", task.getDatabase());
-                    continue;
-                }
+            if (useMetadataMigration) {
+                // Create metadata extractor for listing tables when "all" is specified
+                tableLister = new HiveMetadataExtractor(config.getClusters().getSource());
+            }
 
-                for (String tableName : task.getTables()) {
-                    if ("all".equalsIgnoreCase(tableName)) {
-                        log.info("  Skipping 'all' - not implemented in MVP");
+            try {
+                for (MigrationTask task : config.getMigration().getTasks()) {
+                    log.info("Processing database: {}", task.getDatabase());
+
+                    if (task.getTables() == null) {
+                        log.warn("No tables specified for database: {}", task.getDatabase());
                         continue;
                     }
 
-                    MigrationResult result;
-                    if (useMetadataMigration) {
-                        result = migrateTableWithMetadata(
-                            config,
-                            task.getDatabase(),
-                            tableName,
-                            stateManager
-                        );
-                    } else {
-                        result = migrateTable(
-                            config,
-                            task.getDatabase(),
-                            tableName,
-                            stateManager
-                        );
+                    // Resolve "all" to actual table names
+                    List<String> tablesToMigrate = resolveTables(task, tableLister);
+                    if (tablesToMigrate.isEmpty()) {
+                        log.warn("No tables to migrate for database: {}", task.getDatabase());
+                        continue;
                     }
 
-                    if (!result.isSuccess()) {
-                        overallSuccess = false;
-                        if (config.getMigration().getExecution() == null ||
-                            !config.getMigration().getExecution().isContinueOnFailure()) {
-                            log.error("Stopping due to failure (continueOnFailure=false)");
-                            break;
+                    log.info("  Tables to migrate: {}", tablesToMigrate.size());
+                    int tableIndex = 0;
+                    for (String tableName : tablesToMigrate) {
+                        tableIndex++;
+                        log.info("  [{}/{}] Migrating table: {}.{}", tableIndex, tablesToMigrate.size(), task.getDatabase(), tableName);
+
+                        MigrationResult result;
+                        if (useMetadataMigration) {
+                            result = migrateTableWithMetadata(
+                                config,
+                                task.getDatabase(),
+                                tableName,
+                                stateManager
+                            );
+                        } else {
+                            result = migrateTable(
+                                config,
+                                task.getDatabase(),
+                                tableName,
+                                stateManager
+                            );
                         }
+
+                        if (!result.isSuccess()) {
+                            overallSuccess = false;
+                            if (config.getMigration().getExecution() == null ||
+                                !config.getMigration().getExecution().isContinueOnFailure()) {
+                                log.error("Stopping due to failure (continueOnFailure=false)");
+                                break;
+                            }
+                        }
+                    }
+                }
+            } finally {
+                if (tableLister != null) {
+                    try {
+                        tableLister.close();
+                    } catch (Exception e) {
+                        log.warn("Error closing table lister", e);
                     }
                 }
             }
 
-            // 4. Mark completion
+            // 6. Generate migration report
+            log.info("Generating migration report...");
+            ReportGenerator reportGenerator = new ReportGenerator(config.getMigration().getOutput().getReportDir());
+            String reportPath = reportGenerator.generateReport(
+                stateManager.getState(),
+                config.getClusters().getSource().getName(),
+                config.getClusters().getTarget().getName()
+            );
+            if (reportPath != null) {
+                log.info("Migration report: {}", reportPath);
+            }
+
+            // 7. Mark completion
             stateManager.markCompleted();
 
             // 5. Exit with appropriate code
@@ -211,6 +251,22 @@ public class Main {
         } catch (Exception e) {
             log.error("Cluster authentication failed: {}", e.getMessage());
             return false;
+        }
+    }
+
+    private static List<String> resolveTables(MigrationTask task, HiveMetadataExtractor tableLister) {
+        if (task.isMigrateAllTables()) {
+            log.info("    'all' specified - listing tables from source HMS...");
+            try {
+                List<String> allTables = tableLister.listTables(task.getDatabase());
+                log.info("    Found {} tables in database {}", allTables.size(), task.getDatabase());
+                return allTables;
+            } catch (Exception e) {
+                log.error("    Failed to list tables from HMS: {}", e.getMessage());
+                return List.of();
+            }
+        } else {
+            return task.getTables();
         }
     }
 
