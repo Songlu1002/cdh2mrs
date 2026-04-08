@@ -51,11 +51,12 @@ public class JsonStateManager implements StateManager {
 
     @Override
     public MigrationState loadState() {
+        // Use exists check via File to handle Windows short path names
+        if (!stateFilePath.toFile().exists()) {
+            log.warn("State file does not exist at path: {}", stateFilePath);
+            return null;
+        }
         try {
-            if (!Files.exists(stateFilePath)) {
-                log.warn("State file does not exist at path: {}", stateFilePath);
-                return null;
-            }
             this.state = mapper.readValue(stateFilePath.toFile(), MigrationState.class);
             log.info("Loaded existing state from {}", stateFilePath);
             return this.state;
@@ -105,7 +106,7 @@ public class JsonStateManager implements StateManager {
 
     @Override
     public boolean hasState() {
-        return Files.exists(stateFilePath);
+        return stateFilePath.toFile().exists();
     }
 
     public MigrationState getState() {
