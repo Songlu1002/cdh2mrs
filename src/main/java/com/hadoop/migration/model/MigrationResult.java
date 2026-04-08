@@ -1,5 +1,6 @@
 package com.hadoop.migration.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 
 public class MigrationResult {
@@ -10,6 +11,8 @@ public class MigrationResult {
     private String errorCode;
     private long startTime;
     private long endTime;
+
+    @JsonProperty("dataSizeBytes")
     private long dataSizeBytes;
 
     public MigrationResult() {

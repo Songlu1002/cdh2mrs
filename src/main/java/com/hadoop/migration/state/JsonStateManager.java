@@ -40,9 +40,18 @@ public class JsonStateManager implements StateManager {
     public void saveState(MigrationState state) {
         this.state = state;
         try {
-            Files.createDirectories(stateFilePath.getParent());
+            Path parentDir = stateFilePath.getParent();
+            if (parentDir != null) {
+                Files.createDirectories(parentDir);
+            }
             mapper.writeValue(stateFilePath.toFile(), state);
             log.debug("State saved to {}", stateFilePath);
+
+            // Verify the file was created
+            if (!stateFilePath.toFile().exists()) {
+                log.error("State file was not created despite no exception: {}", stateFilePath);
+                throw new RuntimeException("State file was not created");
+            }
         } catch (IOException e) {
             log.error("Failed to save state to {}", stateFilePath, e);
             throw new RuntimeException("Failed to persist state", e);
@@ -51,17 +60,28 @@ public class JsonStateManager implements StateManager {
 
     @Override
     public MigrationState loadState() {
-        // Use exists check via File to handle Windows short path names
+        // If we have in-memory state and file exists, prefer the file (for consistency)
+        // But if file doesn't exist or load fails, return in-memory state if available
         if (!stateFilePath.toFile().exists()) {
             log.warn("State file does not exist at path: {}", stateFilePath);
+            // Return in-memory state if available
+            if (this.state != null) {
+                log.info("Returning in-memory state (file not found)");
+                return this.state;
+            }
             return null;
         }
         try {
             this.state = mapper.readValue(stateFilePath.toFile(), MigrationState.class);
             log.info("Loaded existing state from {}", stateFilePath);
             return this.state;
-        } catch (IOException e) {
-            log.error("Failed to load state from {}", stateFilePath, e);
+        } catch (Exception e) {
+            log.error("Failed to load state from {}: {}", stateFilePath, e.getMessage());
+            // Try to return the in-memory state if available
+            if (this.state != null) {
+                log.warn("Returning in-memory state due to load failure: {}", e.getMessage());
+                return this.state;
+            }
             return null;
         }
     }
