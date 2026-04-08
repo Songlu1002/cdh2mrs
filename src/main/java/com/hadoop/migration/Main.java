@@ -12,7 +12,6 @@ import com.hadoop.migration.executor.DistCpExecutor;
 import com.hadoop.migration.metadata.CompatibilityTransformer;
 import com.hadoop.migration.metadata.HiveMetadataExtractor;
 import com.hadoop.migration.metadata.HiveMetadataImporter;
-import com.hadoop.migration.metadata.HiveMetadataExtractor;
 import com.hadoop.migration.model.MigrationResult;
 import com.hadoop.migration.model.MigrationStatus;
 import com.hadoop.migration.model.TableMetadata;
@@ -104,8 +103,11 @@ public class Main {
             boolean overallSuccess = true;
             HiveMetadataExtractor tableLister = null;
 
-            if (useMetadataMigration) {
-                // Create metadata extractor for listing tables when "all" is specified
+            // Create metadata extractor for listing tables when "all" is specified
+            // (needed regardless of metadata migration mode)
+            boolean needsTableLister = config.getMigration().getTasks().stream()
+                .anyMatch(task -> task.isMigrateAllTables());
+            if (needsTableLister) {
                 tableLister = new HiveMetadataExtractor(config.getClusters().getSource());
             }
 
@@ -355,6 +357,7 @@ public class Main {
 
         HiveMetadataExtractor extractor = null;
         HiveMetadataImporter importer = null;
+        DistCpExecutor executor = null;
 
         try {
             // Step 1: Extract metadata from source
@@ -391,7 +394,7 @@ public class Main {
             log.info("      Source: {}", sourcePath);
             log.info("      Target: {}", targetPath);
 
-            DistCpExecutor executor = new DistCpExecutor(config.getMigration().getDistcp());
+            executor = new DistCpExecutor(config.getMigration().getDistcp());
             DistCpExecutor.ExecutionResult execResult = executor.execute(sourcePath, targetPath);
 
             if (!execResult.isSuccess()) {
@@ -462,6 +465,13 @@ public class Main {
 
         } finally {
             // Clean up resources
+            if (executor != null) {
+                try {
+                    executor.close();
+                } catch (Exception e) {
+                    log.warn("Error closing DistCpExecutor", e);
+                }
+            }
             if (extractor != null) {
                 try {
                     extractor.close();
