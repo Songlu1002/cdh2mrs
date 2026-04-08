@@ -55,11 +55,38 @@ A lightweight tool for migrating data from **CDH 7.1.9 (Hive 2.1.1)** to **Huawe
 ### Build
 
 ```bash
-# Build with Maven
+# Build with Maven Wrapper (recommended)
+./mvnw clean package
+
+# Or use Maven directly if installed
 mvn clean package
 
 # The JAR will be at: target/hadoop-migration-tool-1.0.0-SNAPSHOT.jar
 ```
+
+#### Build Options
+
+```bash
+# Skip tests (faster build)
+./mvnw clean package -DskipTests
+
+# Run tests only
+./mvnw test
+
+# Build with test reports
+./mvnw clean package test
+```
+
+#### Output
+
+After build, you will find:
+
+| File | Description |
+|------|-------------|
+| `target/hadoop-migration-tool-1.0.0-SNAPSHOT.jar` | Executable JAR with all dependencies |
+| `target/surefire-reports/` | Test reports |
+| `state/` | Migration state files (created at runtime) |
+| `reports/` | Migration reports (created at runtime) |
 
 ### Configuration
 
@@ -265,11 +292,38 @@ reports/
 ### 构建
 
 ```bash
-# 使用 Maven 构建
+# 使用 Maven Wrapper 构建（推荐）
+./mvnw clean package
+
+# 或使用已安装的 Maven
 mvn clean package
 
 # 生成的 JAR: target/hadoop-migration-tool-1.0.0-SNAPSHOT.jar
 ```
+
+#### 构建选项
+
+```bash
+# 跳过测试（更快）
+./mvnw clean package -DskipTests
+
+# 仅运行测试
+./mvnw test
+
+# 构建并生成测试报告
+./mvnw clean package test
+```
+
+#### 构建产物
+
+构建完成后，产物位于:
+
+| 文件 | 说明 |
+|------|------|
+| `target/hadoop-migration-tool-1.0.0-SNAPSHOT.jar` | 可执行 JAR（含所有依赖） |
+| `target/surefire-reports/` | 测试报告 |
+| `state/` | 迁移状态文件（运行时创建） |
+| `reports/` | 迁移报告（运行时创建） |
 
 ### 配置示例
 
