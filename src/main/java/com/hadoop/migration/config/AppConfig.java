@@ -29,6 +29,7 @@ public class AppConfig {
         private DistcpConfig distcp;
         private ExecutionConfig execution;
         private OutputConfig output;
+        private MetadataConfig metadata;
 
         public List<MigrationTask> getTasks() { return tasks; }
         public void setTasks(List<MigrationTask> tasks) { this.tasks = tasks; }
@@ -41,6 +42,9 @@ public class AppConfig {
 
         public OutputConfig getOutput() { return output; }
         public void setOutput(OutputConfig output) { this.output = output; }
+
+        public MetadataConfig getMetadata() { return metadata; }
+        public void setMetadata(MetadataConfig metadata) { this.metadata = metadata; }
     }
 
     public static class OutputConfig {
