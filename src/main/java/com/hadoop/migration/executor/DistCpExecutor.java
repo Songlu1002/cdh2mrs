@@ -26,6 +26,14 @@ public class DistCpExecutor {
         this(config, System.getenv("HADOOP_HOME"));
     }
 
+    /**
+     * Closes the executor. Since DistCp executes as an external process,
+     * this method is a no-op provided for consistency with other resources.
+     */
+    public void close() {
+        // No-op: DistCp process completes after execute()
+    }
+
     public ExecutionResult execute(String sourcePath, String targetPath) {
         log.info("Starting DistCp: {} -> {}", sourcePath, targetPath);
 

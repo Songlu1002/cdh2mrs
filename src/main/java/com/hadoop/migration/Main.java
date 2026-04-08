@@ -24,6 +24,8 @@ import java.io.File;
 public class Main {
     private static final Logger log = LoggerFactory.getLogger(Main.class);
 
+    private static final String EXTERNAL_HIVE_PATH = "/warehouse/tablespace/external/hive/";
+
     public static void main(String[] args) {
         if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
             printHelp();
@@ -99,6 +101,11 @@ public class Main {
             for (MigrationTask task : config.getMigration().getTasks()) {
                 log.info("Processing database: {}", task.getDatabase());
 
+                if (task.getTables() == null) {
+                    log.warn("No tables specified for database: {}", task.getDatabase());
+                    continue;
+                }
+
                 for (String tableName : task.getTables()) {
                     if ("all".equalsIgnoreCase(tableName)) {
                         log.info("  Skipping 'all' - not implemented in MVP");
@@ -124,7 +131,8 @@ public class Main {
 
                     if (!result.isSuccess()) {
                         overallSuccess = false;
-                        if (!config.getMigration().getExecution().isContinueOnFailure()) {
+                        if (config.getMigration().getExecution() == null ||
+                            !config.getMigration().getExecution().isContinueOnFailure()) {
                             log.error("Stopping due to failure (continueOnFailure=false)");
                             break;
                         }
@@ -215,19 +223,20 @@ public class Main {
         log.info("  Migrating table: {}.{}", database, tableName);
         stateManager.updateTableStatus(database, tableName, MigrationStatus.DATA_COPYING);
 
+        DistCpExecutor executor = null;
         try {
             // Build source and target paths
             ClusterConfig source = config.getClusters().getSource();
             ClusterConfig target = config.getClusters().getTarget();
 
-            String sourcePath = source.getHdfs().getFullPath("/warehouse/tablespace/external/hive/" + database + ".db/" + tableName);
-            String targetPath = target.getHdfs().getFullPath("/warehouse/tablespace/external/hive/" + database + ".db/" + tableName);
+            String sourcePath = source.getHdfs().getFullPath(EXTERNAL_HIVE_PATH + database + ".db/" + tableName);
+            String targetPath = target.getHdfs().getFullPath(EXTERNAL_HIVE_PATH + database + ".db/" + tableName);
 
             log.info("    Source: {}", sourcePath);
             log.info("    Target: {}", targetPath);
 
             // Execute DistCp
-            DistCpExecutor executor = new DistCpExecutor(
+            executor = new DistCpExecutor(
                 config.getMigration().getDistcp());
             DistCpExecutor.ExecutionResult execResult = executor.execute(sourcePath, targetPath);
 
@@ -257,6 +266,14 @@ public class Main {
                 .status(MigrationStatus.FAILED)
                 .error("EXCEPTION", e.getMessage())
                 .build();
+        } finally {
+            if (executor != null) {
+                try {
+                    executor.close();
+                } catch (Exception e) {
+                    log.warn("Error closing DistCpExecutor", e);
+                }
+            }
         }
     }
 
@@ -273,8 +290,8 @@ public class Main {
         MetadataConfig metadataConfig = config.getMigration().getMetadata();
 
         // Get source and target HDFS paths for DistCp
-        String sourcePath = source.getHdfs().getFullPath("/warehouse/tablespace/external/hive/" + database + ".db/" + tableName);
-        String targetPath = target.getHdfs().getFullPath("/warehouse/tablespace/external/hive/" + database + ".db/" + tableName);
+        String sourcePath = source.getHdfs().getFullPath(EXTERNAL_HIVE_PATH + database + ".db/" + tableName);
+        String targetPath = target.getHdfs().getFullPath(EXTERNAL_HIVE_PATH + database + ".db/" + tableName);
 
         // Get source and target namenodes for location rewriting
         String sourceNamenode = source.getHdfs().getProtocol() + "://" + source.getHdfs().getNamenode() + ":" + source.getHdfs().getPort();
