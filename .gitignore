@@ -1,0 +1,24 @@
+# Maven
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# State files (runtime generated)
+state/
+
+# Reports (runtime generated)
+reports/
