@@ -9,6 +9,10 @@ public class MetadataConfig {
     private boolean addTransactionalProp = true;
     private boolean clearStatistics = true;
     private boolean upgradeBucketingVersion = true;
+    private boolean autoConvert = false;
+
+    public boolean isAutoConvert() { return autoConvert; }
+    public void setAutoConvert(boolean autoConvert) { this.autoConvert = autoConvert; }
 
     public boolean isMigrateViews() { return migrateViews; }
     public void setMigrateViews(boolean migrateViews) { this.migrateViews = migrateViews; }

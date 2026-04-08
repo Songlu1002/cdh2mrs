@@ -2,21 +2,24 @@ package com.hadoop.migration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.hadoop.migration.auth.KerberosAuthenticator;
 import com.hadoop.migration.config.AppConfig;
 import com.hadoop.migration.config.ClusterConfig;
+import com.hadoop.migration.config.KerberosConfig;
+import com.hadoop.migration.config.MetadataConfig;
 import com.hadoop.migration.config.MigrationTask;
 import com.hadoop.migration.executor.DistCpExecutor;
+import com.hadoop.migration.metadata.CompatibilityTransformer;
+import com.hadoop.migration.metadata.HiveMetadataExtractor;
+import com.hadoop.migration.metadata.HiveMetadataImporter;
 import com.hadoop.migration.model.MigrationResult;
-import com.hadoop.migration.model.MigrationState;
 import com.hadoop.migration.model.MigrationStatus;
+import com.hadoop.migration.model.TableMetadata;
 import com.hadoop.migration.state.JsonStateManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
 public class Main {
     private static final Logger log = LoggerFactory.getLogger(Main.class);
@@ -75,7 +78,23 @@ public class Main {
                 config.getClusters().getTarget().getName()
             );
 
-            // 3. Execute migration for each task
+            // 3. Authenticate to both clusters (if Kerberos is enabled)
+            if (!authenticateClusters(config)) {
+                log.error("Cluster authentication failed");
+                System.exit(2);
+            }
+
+            // 4. Determine if metadata migration is enabled
+            MetadataConfig metadataConfig = config.getMigration().getMetadata();
+            boolean useMetadataMigration = (metadataConfig != null && metadataConfig.isAutoConvert());
+
+            if (useMetadataMigration) {
+                log.info("Metadata migration enabled - will extract and transform table metadata");
+            } else {
+                log.info("Metadata migration disabled - using data-only migration");
+            }
+
+            // 5. Execute migration for each task
             boolean overallSuccess = true;
             for (MigrationTask task : config.getMigration().getTasks()) {
                 log.info("Processing database: {}", task.getDatabase());
@@ -86,12 +105,22 @@ public class Main {
                         continue;
                     }
 
-                    MigrationResult result = migrateTable(
-                        config,
-                        task.getDatabase(),
-                        tableName,
-                        stateManager
-                    );
+                    MigrationResult result;
+                    if (useMetadataMigration) {
+                        result = migrateTableWithMetadata(
+                            config,
+                            task.getDatabase(),
+                            tableName,
+                            stateManager
+                        );
+                    } else {
+                        result = migrateTable(
+                            config,
+                            task.getDatabase(),
+                            tableName,
+                            stateManager
+                        );
+                    }
 
                     if (!result.isSuccess()) {
                         overallSuccess = false;
@@ -142,6 +171,39 @@ public class Main {
             throw new IllegalArgumentException("Missing 'migration' in config");
         }
         log.info("Configuration validated successfully");
+    }
+
+    private static boolean authenticateClusters(AppConfig config) {
+        log.info("Authenticating to clusters...");
+
+        ClusterConfig source = config.getClusters().getSource();
+        ClusterConfig target = config.getClusters().getTarget();
+
+        try {
+            // Authenticate to source cluster if Kerberos is enabled
+            KerberosConfig sourceKerberos = source.getKerberos();
+            if (sourceKerberos != null && sourceKerberos.isEnabled()) {
+                log.info("Authenticating to source cluster {} with Kerberos", source.getName());
+                KerberosAuthenticator.authenticate(sourceKerberos);
+            } else {
+                log.info("Source cluster {} does not use Kerberos authentication", source.getName());
+            }
+
+            // Authenticate to target cluster if Kerberos is enabled
+            KerberosConfig targetKerberos = target.getKerberos();
+            if (targetKerberos != null && targetKerberos.isEnabled()) {
+                log.info("Authenticating to target cluster {} with Kerberos", target.getName());
+                KerberosAuthenticator.authenticate(targetKerberos);
+            } else {
+                log.info("Target cluster {} does not use Kerberos authentication", target.getName());
+            }
+
+            log.info("Cluster authentication completed successfully");
+            return true;
+        } catch (Exception e) {
+            log.error("Cluster authentication failed: {}", e.getMessage());
+            return false;
+        }
     }
 
     private static MigrationResult migrateTable(
@@ -195,6 +257,152 @@ public class Main {
                 .status(MigrationStatus.FAILED)
                 .error("EXCEPTION", e.getMessage())
                 .build();
+        }
+    }
+
+    private static MigrationResult migrateTableWithMetadata(
+            AppConfig config,
+            String database,
+            String tableName,
+            JsonStateManager stateManager) {
+
+        log.info("  Migrating table with metadata: {}.{}", database, tableName);
+
+        ClusterConfig source = config.getClusters().getSource();
+        ClusterConfig target = config.getClusters().getTarget();
+        MetadataConfig metadataConfig = config.getMigration().getMetadata();
+
+        // Get source and target HDFS paths for DistCp
+        String sourcePath = source.getHdfs().getFullPath("/warehouse/tablespace/external/hive/" + database + ".db/" + tableName);
+        String targetPath = target.getHdfs().getFullPath("/warehouse/tablespace/external/hive/" + database + ".db/" + tableName);
+
+        // Get source and target namenodes for location rewriting
+        String sourceNamenode = source.getHdfs().getProtocol() + "://" + source.getHdfs().getNamenode() + ":" + source.getHdfs().getPort();
+        String targetNamenode = target.getHdfs().getProtocol() + "://" + target.getHdfs().getNamenode() + ":" + target.getHdfs().getPort();
+
+        HiveMetadataExtractor extractor = null;
+        HiveMetadataImporter importer = null;
+
+        try {
+            // Step 1: Extract metadata from source
+            stateManager.updateTableStatus(database, tableName, MigrationStatus.METADATA_MIGRATING);
+            log.info("    Extracting metadata from source...");
+
+            extractor = new HiveMetadataExtractor(source);
+            TableMetadata sourceMetadata = extractor.extractTableMetadata(database, tableName);
+
+            if (sourceMetadata.isView()) {
+                log.warn("    View {}.{} detected - views require manual migration", database, tableName);
+                stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
+                return MigrationResult.builder()
+                    .database(database)
+                    .table(tableName)
+                    .status(MigrationStatus.FAILED)
+                    .error("VIEW", "Views cannot be migrated automatically")
+                    .build();
+            }
+
+            log.info("    Extracted metadata: type={}, location={}",
+                sourceMetadata.getTableType(), sourceMetadata.getLocation());
+
+            // Step 2: Transform metadata for Hive 3.x compatibility
+            log.info("    Transforming metadata for Hive 3.x compatibility...");
+            CompatibilityTransformer transformer = new CompatibilityTransformer(
+                metadataConfig, sourceNamenode, targetNamenode);
+            TableMetadata transformedMetadata = transformer.transform(sourceMetadata);
+            log.info("    Transformed metadata: location={}", transformedMetadata.getLocation());
+
+            // Step 3: Execute DistCp for data copy
+            stateManager.updateTableStatus(database, tableName, MigrationStatus.DATA_COPYING);
+            log.info("    Copying data with DistCp...");
+            log.info("      Source: {}", sourcePath);
+            log.info("      Target: {}", targetPath);
+
+            DistCpExecutor executor = new DistCpExecutor(config.getMigration().getDistcp());
+            DistCpExecutor.ExecutionResult execResult = executor.execute(sourcePath, targetPath);
+
+            if (!execResult.isSuccess()) {
+                log.error("    DistCp failed with exit code: {}", execResult.getExitCode());
+                stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
+                return MigrationResult.builder()
+                    .database(database)
+                    .table(tableName)
+                    .status(MigrationStatus.FAILED)
+                    .error("DISTCP_" + execResult.getExitCode(), execResult.getOutput())
+                    .build();
+            }
+
+            log.info("    Data copy completed successfully");
+
+            // Step 4: Import metadata to target
+            stateManager.updateTableStatus(database, tableName, MigrationStatus.METADATA_MIGRATING);
+            log.info("    Importing metadata to target...");
+
+            importer = new HiveMetadataImporter(target);
+
+            // Ensure database exists
+            importer.createDatabase(database, null);
+
+            // Create the table
+            importer.createTable(transformedMetadata);
+
+            // Verify table was created
+            if (importer.tableExists(database, tableName)) {
+                log.info("    Successfully created table {}.{}", database, tableName);
+                stateManager.updateTableStatus(database, tableName, MigrationStatus.COMPLETED);
+                return MigrationResult.builder()
+                    .database(database)
+                    .table(tableName)
+                    .status(MigrationStatus.COMPLETED)
+                    .build();
+            } else {
+                log.error("    Table {}.{} was not created", database, tableName);
+                stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
+                return MigrationResult.builder()
+                    .database(database)
+                    .table(tableName)
+                    .status(MigrationStatus.FAILED)
+                    .error("IMPORT_FAILED", "Table creation verification failed")
+                    .build();
+            }
+
+        } catch (UnsupportedOperationException e) {
+            // Handle unsupported features (views, UNIONTYPE, etc.)
+            log.error("    Unsupported operation: {}", e.getMessage());
+            stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
+            return MigrationResult.builder()
+                .database(database)
+                .table(tableName)
+                .status(MigrationStatus.FAILED)
+                .error("UNSUPPORTED", e.getMessage())
+                .build();
+
+        } catch (Exception e) {
+            log.error("    Migration failed: {}", e.getMessage());
+            stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
+            return MigrationResult.builder()
+                .database(database)
+                .table(tableName)
+                .status(MigrationStatus.FAILED)
+                .error("EXCEPTION", e.getMessage())
+                .build();
+
+        } finally {
+            // Clean up resources
+            if (extractor != null) {
+                try {
+                    extractor.close();
+                } catch (Exception e) {
+                    log.warn("Error closing metadata extractor", e);
+                }
+            }
+            if (importer != null) {
+                try {
+                    importer.close();
+                } catch (Exception e) {
+                    log.warn("Error closing metadata importer", e);
+                }
+            }
         }
     }
 }
