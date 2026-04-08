@@ -10,33 +10,32 @@ class AppConfigTest {
 
     @Test
     void testParseMinimalConfig() throws Exception {
-        String yaml = """
-            clusters:
-              source:
-                name: "test-source"
-                type: "CDH"
-                version: "7.1.9"
-                hiveVersion: "2.1.1"
-                hdfs:
-                  namenode: "cdh-nn"
-                  port: 9870
-              target:
-                name: "test-target"
-                type: "MRS"
-                version: "3.5.0"
-                hiveVersion: "3.1.0"
-                hdfs:
-                  namenode: "mrs-nn"
-                  port: 9870
-            migration:
-              tasks:
-                - database: "db1"
-                  tables: ["table1"]
-              distcp:
-                mapTasks: 10
-              execution:
-                continueOnFailure: true
-            """;
+        String yaml =
+            "clusters:\n" +
+            "  source:\n" +
+            "    name: \"test-source\"\n" +
+            "    type: \"CDH\"\n" +
+            "    version: \"7.1.9\"\n" +
+            "    hiveVersion: \"2.1.1\"\n" +
+            "    hdfs:\n" +
+            "      namenode: \"cdh-nn\"\n" +
+            "      port: 9870\n" +
+            "  target:\n" +
+            "    name: \"test-target\"\n" +
+            "    type: \"MRS\"\n" +
+            "    version: \"3.5.0\"\n" +
+            "    hiveVersion: \"3.1.0\"\n" +
+            "    hdfs:\n" +
+            "      namenode: \"mrs-nn\"\n" +
+            "      port: 9870\n" +
+            "migration:\n" +
+            "  tasks:\n" +
+            "    - database: \"db1\"\n" +
+            "      tables: [\"table1\"]\n" +
+            "  distcp:\n" +
+            "    mapTasks: 10\n" +
+            "  execution:\n" +
+            "    continueOnFailure: true\n";
 
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
         AppConfig config = mapper.readValue(yaml, AppConfig.class);
@@ -49,21 +48,21 @@ class AppConfigTest {
 
     @Test
     void testDefaultValues() throws Exception {
-        String yaml = """
-            clusters:
-              source:
-                name: "source"
-                hdfs:
-                  namenode: "nn"
-              target:
-                name: "target"
-                hdfs:
-                  namenode: "nn"
-            migration:
-              tasks: []
-              distcp: {}
-              execution: {}
-            """;
+        String yaml =
+            "clusters:\n" +
+            "  source:\n" +
+            "    name: \"source\"\n" +
+            "    hdfs:\n" +
+            "      namenode: \"nn\"\n" +
+            "  target:\n" +
+            "    name: \"target\"\n" +
+            "    hdfs:\n" +
+            "      namenode: \"nn\"\n" +
+            "migration:\n" +
+            "  tasks: []\n" +
+            "  distcp: {}\n" +
+            "  execution: {}\n"
+;
 
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
         AppConfig config = mapper.readValue(yaml, AppConfig.class);

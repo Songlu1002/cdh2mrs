@@ -17,11 +17,11 @@ public class JsonStateManager implements StateManager {
     private static final Logger log = LoggerFactory.getLogger(JsonStateManager.class);
 
     private final ObjectMapper mapper;
-    private final String stateFilePath;
+    private final Path stateFilePath;
     private MigrationState state;
 
     public JsonStateManager(String stateFilePath) {
-        this.stateFilePath = stateFilePath;
+        this.stateFilePath = Paths.get(stateFilePath).toAbsolutePath().normalize();
         this.mapper = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT)
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
@@ -40,9 +40,8 @@ public class JsonStateManager implements StateManager {
     public void saveState(MigrationState state) {
         this.state = state;
         try {
-            Path path = Paths.get(stateFilePath);
-            Files.createDirectories(path.getParent());
-            mapper.writeValue(path.toFile(), state);
+            Files.createDirectories(stateFilePath.getParent());
+            mapper.writeValue(stateFilePath.toFile(), state);
             log.debug("State saved to {}", stateFilePath);
         } catch (IOException e) {
             log.error("Failed to save state to {}", stateFilePath, e);
@@ -53,11 +52,11 @@ public class JsonStateManager implements StateManager {
     @Override
     public MigrationState loadState() {
         try {
-            Path path = Paths.get(stateFilePath);
-            if (!Files.exists(path)) {
+            if (!Files.exists(stateFilePath)) {
+                log.warn("State file does not exist at path: {}", stateFilePath);
                 return null;
             }
-            this.state = mapper.readValue(path.toFile(), MigrationState.class);
+            this.state = mapper.readValue(stateFilePath.toFile(), MigrationState.class);
             log.info("Loaded existing state from {}", stateFilePath);
             return this.state;
         } catch (IOException e) {
@@ -106,7 +105,7 @@ public class JsonStateManager implements StateManager {
 
     @Override
     public boolean hasState() {
-        return Files.exists(Paths.get(stateFilePath));
+        return Files.exists(stateFilePath);
     }
 
     public MigrationState getState() {
