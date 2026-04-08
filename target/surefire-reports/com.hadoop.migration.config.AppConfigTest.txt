@@ -1,0 +1,26 @@
+-------------------------------------------------------------------------------
+Test set: com.hadoop.migration.config.AppConfigTest
+-------------------------------------------------------------------------------
+Tests run: 2, Failures: 0, Errors: 2, Skipped: 0, Time elapsed: 0.165 s <<< FAILURE! -- in com.hadoop.migration.config.AppConfigTest
+com.hadoop.migration.config.AppConfigTest.testDefaultValues -- Time elapsed: 0.118 s <<< ERROR!
+java.lang.NoSuchMethodError: 'com.fasterxml.jackson.core.io.ContentReference com.fasterxml.jackson.dataformat.yaml.YAMLFactory._createContentReference(java.lang.Object)'
+	at com.fasterxml.jackson.dataformat.yaml.YAMLFactory.createParser(YAMLFactory.java:412)
+	at com.fasterxml.jackson.dataformat.yaml.YAMLFactory.createParser(YAMLFactory.java:386)
+	at com.fasterxml.jackson.dataformat.yaml.YAMLFactory.createParser(YAMLFactory.java:15)
+	at com.fasterxml.jackson.databind.ObjectMapper.readValue(ObjectMapper.java:2726)
+	at com.hadoop.migration.config.AppConfigTest.testDefaultValues(AppConfigTest.java:68)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:566)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1541)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1541)
+
+com.hadoop.migration.config.AppConfigTest.testParseMinimalConfig -- Time elapsed: 0.012 s <<< ERROR!
+java.lang.NoSuchMethodError: 'com.fasterxml.jackson.core.io.ContentReference com.fasterxml.jackson.dataformat.yaml.YAMLFactory._createContentReference(java.lang.Object)'
+	at com.fasterxml.jackson.dataformat.yaml.YAMLFactory.createParser(YAMLFactory.java:412)
+	at com.fasterxml.jackson.dataformat.yaml.YAMLFactory.createParser(YAMLFactory.java:386)
+	at com.fasterxml.jackson.dataformat.yaml.YAMLFactory.createParser(YAMLFactory.java:15)
+	at com.fasterxml.jackson.databind.ObjectMapper.readValue(ObjectMapper.java:2726)
+	at com.hadoop.migration.config.AppConfigTest.testParseMinimalConfig(AppConfigTest.java:41)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:566)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1541)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1541)
+

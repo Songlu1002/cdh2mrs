@@ -1,0 +1,46 @@
+# Sample Configuration for Hadoop Migration Tool
+clusters:
+  source:
+    name: "cdh-cluster"
+    type: "CDH"
+    version: "7.1.9"
+    hiveVersion: "2.1.1"
+    configDir: "/opt/cdh-client-conf"
+    hdfs:
+      namenode: "cdh-nn.example.com"
+      port: 9870
+      protocol: "webhdfs"
+
+  target:
+    name: "mrs-cluster"
+    type: "MRS"
+    version: "3.5.0"
+    hiveVersion: "3.1.0"
+    configDir: "/opt/mrs-client-conf"
+    hdfs:
+      namenode: "mrs-nn.example.com"
+      port: 9870
+      protocol: "webhdfs"
+
+migration:
+  tasks:
+    - database: "sales_db"
+      tables:
+        - "orders"
+        - "customers"
+
+  distcp:
+    mapTasks: 20
+    bandwidthMB: 100
+    retryCount: 3
+    sourceProtocol: "webhdfs"
+    targetProtocol: "webhdfs"
+
+  execution:
+    continueOnFailure: true
+    maxFailedTasks: 0
+    batchConcurrency: 1
+
+  output:
+    stateFile: "state/migration-state.json"
+    reportDir: "reports/"
