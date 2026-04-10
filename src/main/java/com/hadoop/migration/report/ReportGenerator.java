@@ -93,9 +93,9 @@ public class ReportGenerator {
             MigrationStatus status = result.getStatus();
 
             Map<String, Object> detail = new HashMap<>();
-            String[] parts = tableId.split("\\.");
-            detail.put("database", parts.length > 0 ? parts[0] : "unknown");
-            detail.put("table", parts.length > 1 ? parts[1] : tableId);
+            // Use MigrationResult's database and table fields directly (more reliable than parsing key)
+            detail.put("database", result.getDatabase() != null ? result.getDatabase() : "unknown");
+            detail.put("table", result.getTable() != null ? result.getTable() : tableId);
             detail.put("status", status.name());
             detail.put("dataSizeBytes", result.getDataSizeBytes());
             detail.put("durationMs", result.getDurationMs());

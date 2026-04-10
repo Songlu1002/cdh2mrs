@@ -57,7 +57,7 @@ public class DistCpExecutor {
                 }
             }
 
-            boolean finished = process.waitFor(config.getRetryCount() * 30L, TimeUnit.SECONDS);
+            boolean finished = process.waitFor(config.getTimeoutMinutes(), TimeUnit.MINUTES);
             int exitCode = finished ? process.exitValue() : -1;
 
             if (exitCode == 0) {

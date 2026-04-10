@@ -3,6 +3,7 @@ package com.hadoop.migration.config;
 public class HdfsConfig {
     private String namenode;
     private int port = 9870;
+    private int metastorePort = 9083; // HMS Thrift port, default 9083
     private String protocol = "webhdfs";
 
     public String getNamenode() { return namenode; }
@@ -17,4 +18,7 @@ public class HdfsConfig {
     public String getFullPath(String path) {
         return protocol + "://" + namenode + ":" + port + path;
     }
+
+    public int getMetastorePort() { return metastorePort; }
+    public void setMetastorePort(int metastorePort) { this.metastorePort = metastorePort; }
 }

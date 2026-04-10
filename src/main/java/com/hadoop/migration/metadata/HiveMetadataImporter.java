@@ -54,7 +54,9 @@ public class HiveMetadataImporter {
             org.apache.hadoop.hive.conf.HiveConf conf = new org.apache.hadoop.hive.conf.HiveConf();
             HdfsConfig hdfs = clusterConfig.getHdfs();
             if (hdfs != null) {
-                conf.set("hive.metastore.uris", "thrift://" + hdfs.getNamenode() + ":9083");
+                // Use configurable HMS thrift port
+                int metastorePort = hdfs.getMetastorePort() > 0 ? hdfs.getMetastorePort() : 9083;
+                conf.set("hive.metastore.uris", "thrift://" + hdfs.getNamenode() + ":" + metastorePort);
             }
             return new HiveMetaStoreClient(conf);
         } catch (Exception e) {
@@ -91,6 +93,15 @@ public class HiveMetadataImporter {
 
     public void createDatabase(String dbName, String description) {
         try {
+            // First check if database already exists (more reliable than catching exception)
+            try {
+                getHmsClient().getDatabase(dbName);
+                log.info("Database {} already exists", dbName);
+                return;
+            } catch (Exception e) {
+                // Database doesn't exist, proceed to create
+            }
+
             org.apache.hadoop.hive.metastore.api.Database db =
                 new org.apache.hadoop.hive.metastore.api.Database();
             db.setName(dbName);
@@ -98,7 +109,9 @@ public class HiveMetadataImporter {
             getHmsClient().createDatabase(db);
             log.info("Created database: {}", dbName);
         } catch (Exception e) {
-            if (e.getMessage() != null && e.getMessage().contains("already exists")) {
+            // Fallback: check if error indicates database already exists
+            String msg = e.getMessage();
+            if (msg != null && (msg.contains("already exists") || msg.contains("AlreadyExistsException"))) {
                 log.info("Database {} already exists", dbName);
             } else {
                 log.error("Failed to create database {}", dbName, e);

@@ -87,7 +87,8 @@ public class CompatibilityTransformer {
             return location;
         }
         if (location.startsWith(sourceNamenode)) {
-            String newLocation = location.replace(sourceNamenode, targetNamenode);
+            // Use substring + concatenation for precise replacement (only the prefix)
+            String newLocation = targetNamenode + location.substring(sourceNamenode.length());
             log.debug("Rewrote location: {} -> {}", location, newLocation);
             return newLocation;
         }

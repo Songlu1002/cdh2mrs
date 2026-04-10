@@ -4,6 +4,7 @@ public class DistcpConfig {
     private int mapTasks = 20;
     private int bandwidthMB = 100;
     private int retryCount = 3;
+    private int timeoutMinutes = 1440; // Default 24 hours for large data migration
     private String sourceProtocol = "webhdfs";
     private String targetProtocol = "webhdfs";
     private String externalTablePath = "/warehouse/tablespace/external/hive/";
@@ -26,4 +27,7 @@ public class DistcpConfig {
 
     public String getExternalTablePath() { return externalTablePath; }
     public void setExternalTablePath(String path) { this.externalTablePath = path; }
+
+    public int getTimeoutMinutes() { return timeoutMinutes; }
+    public void setTimeoutMinutes(int timeoutMinutes) { this.timeoutMinutes = timeoutMinutes; }
 }

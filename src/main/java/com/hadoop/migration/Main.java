@@ -130,8 +130,18 @@ public class Main {
 
                     log.info("  Tables to migrate: {}", tablesToMigrate.size());
                     int tableIndex = 0;
+                    int skippedCount = 0;
                     for (String tableName : tablesToMigrate) {
                         tableIndex++;
+
+                        // Skip already completed tables (resume functionality)
+                        if (stateManager.isTableCompleted(task.getDatabase(), tableName)) {
+                            log.info("  [{}/{}] Skipping already completed table: {}.{}",
+                                tableIndex, tablesToMigrate.size(), task.getDatabase(), tableName);
+                            skippedCount++;
+                            continue;
+                        }
+
                         log.info("  [{}/{}] Migrating table: {}.{}", tableIndex, tablesToMigrate.size(), task.getDatabase(), tableName);
 
                         MigrationResult result;
@@ -166,6 +176,9 @@ public class Main {
                                 }
                             }
                         }
+                    }
+                    if (skippedCount > 0) {
+                        log.info("  Skipped {} already completed tables in database {}", skippedCount, task.getDatabase());
                     }
                 }
             } finally {
@@ -287,24 +300,59 @@ public class Main {
             JsonStateManager stateManager) {
 
         log.info("  Migrating table: {}.{}", database, tableName);
-        stateManager.updateTableStatus(database, tableName, MigrationStatus.DATA_COPYING);
+        stateManager.updateTableStatus(database, tableName, MigrationStatus.METADATA_EXTRACTING);
 
+        ClusterConfig source = config.getClusters().getSource();
+        ClusterConfig target = config.getClusters().getTarget();
+        MetadataConfig metadataConfig = config.getMigration().getMetadata();
+
+        // Get source and target namenodes for location rewriting
+        String sourceNamenode = source.getHdfs().getProtocol() + "://" + source.getHdfs().getNamenode() + ":" + source.getHdfs().getPort();
+        String targetNamenode = target.getHdfs().getProtocol() + "://" + target.getHdfs().getNamenode() + ":" + target.getHdfs().getPort();
+
+        HiveMetadataExtractor extractor = null;
         DistCpExecutor executor = null;
+
         try {
-            // Build source and target paths
-            ClusterConfig source = config.getClusters().getSource();
-            ClusterConfig target = config.getClusters().getTarget();
-            String externalPath = config.getMigration().getDistcp().getExternalTablePath();
+            // Step 1: Extract metadata to get real location (needed for both table types)
+            log.info("    Extracting metadata to determine real location...");
+            extractor = new HiveMetadataExtractor(source);
+            TableMetadata sourceMetadata = extractor.extractTableMetadata(database, tableName);
 
-            String sourcePath = source.getHdfs().getFullPath(externalPath + database + ".db/" + tableName);
-            String targetPath = target.getHdfs().getFullPath(externalPath + database + ".db/" + tableName);
+            if (sourceMetadata.isView()) {
+                log.warn("    View {}.{} detected - views require manual migration", database, tableName);
+                stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
+                return MigrationResult.builder()
+                    .database(database)
+                    .table(tableName)
+                    .status(MigrationStatus.FAILED)
+                    .error("VIEW", "Views cannot be migrated automatically")
+                    .build();
+            }
 
-            log.info("    Source: {}", sourcePath);
-            log.info("    Target: {}", targetPath);
+            log.info("    Table type: {}, location: {}", sourceMetadata.getTableType(), sourceMetadata.getLocation());
 
-            // Execute DistCp
-            executor = new DistCpExecutor(
-                config.getMigration().getDistcp());
+            // Step 2: Transform location for target
+            String sourcePath = sourceMetadata.getLocation();
+            String targetPath;
+
+            if (sourcePath != null && sourcePath.startsWith(sourceNamenode)) {
+                targetPath = targetNamenode + sourcePath.substring(sourceNamenode.length());
+            } else {
+                // Fallback to configured path if location doesn't match expected pattern
+                String externalPath = config.getMigration().getDistcp().getExternalTablePath();
+                targetPath = target.getHdfs().getFullPath(externalPath + database + ".db/" + tableName);
+                log.warn("    Source location {} does not match source namenode pattern {}, using fallback target path: {}",
+                    sourcePath, sourceNamenode, targetPath);
+            }
+
+            // Step 3: Execute DistCp
+            stateManager.updateTableStatus(database, tableName, MigrationStatus.DATA_COPYING);
+            log.info("    Copying data with DistCp...");
+            log.info("      Source: {}", sourcePath);
+            log.info("      Target: {}", targetPath);
+
+            executor = new DistCpExecutor(config.getMigration().getDistcp());
             DistCpExecutor.ExecutionResult execResult = executor.execute(sourcePath, targetPath);
 
             if (execResult.isSuccess()) {
@@ -315,6 +363,7 @@ public class Main {
                     .status(MigrationStatus.COMPLETED)
                     .build();
             } else {
+                log.error("    DistCp failed with exit code: {}", execResult.getExitCode());
                 stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
                 return MigrationResult.builder()
                     .database(database)
@@ -339,6 +388,13 @@ public class Main {
                     executor.close();
                 } catch (Exception e) {
                     log.warn("Error closing DistCpExecutor", e);
+                }
+            }
+            if (extractor != null) {
+                try {
+                    extractor.close();
+                } catch (Exception e) {
+                    log.warn("Error closing metadata extractor", e);
                 }
             }
         }

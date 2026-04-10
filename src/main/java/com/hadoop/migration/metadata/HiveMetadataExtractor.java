@@ -55,8 +55,9 @@ public class HiveMetadataExtractor {
             org.apache.hadoop.hive.conf.HiveConf conf = new org.apache.hadoop.hive.conf.HiveConf();
             HdfsConfig hdfs = clusterConfig.getHdfs();
             if (hdfs != null) {
-                // Use HMS thrift port 9083
-                conf.set("hive.metastore.uris", "thrift://" + hdfs.getNamenode() + ":9083");
+                // Use configurable HMS thrift port
+                int metastorePort = hdfs.getMetastorePort() > 0 ? hdfs.getMetastorePort() : 9083;
+                conf.set("hive.metastore.uris", "thrift://" + hdfs.getNamenode() + ":" + metastorePort);
             }
             return new HiveMetaStoreClient(conf);
         } catch (Exception e) {

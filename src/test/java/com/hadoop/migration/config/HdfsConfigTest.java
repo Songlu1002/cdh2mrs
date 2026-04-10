@@ -46,4 +46,20 @@ class HdfsConfigTest {
 
         assertEquals("hdfs://hdfs-nn:8020/db/table", config.getFullPath("/db/table"));
     }
+
+    @Test
+    void testMetastorePort() {
+        HdfsConfig config = new HdfsConfig();
+
+        // Default value (9083 is standard HMS thrift port)
+        assertEquals(9083, config.getMetastorePort());
+
+        // Custom HMS port (some clusters use different ports)
+        config.setMetastorePort(10000);
+        assertEquals(10000, config.getMetastorePort());
+
+        // Non-standard port
+        config.setMetastorePort(9084);
+        assertEquals(9084, config.getMetastorePort());
+    }
 }

@@ -12,6 +12,7 @@ class DistcpConfigTest {
         assertEquals(20, config.getMapTasks());
         assertEquals(100, config.getBandwidthMB());
         assertEquals(3, config.getRetryCount());
+        assertEquals(1440, config.getTimeoutMinutes()); // 24 hours default
         assertEquals("webhdfs", config.getSourceProtocol());
         assertEquals("webhdfs", config.getTargetProtocol());
         assertEquals("/warehouse/tablespace/external/hive/", config.getExternalTablePath());
@@ -76,5 +77,21 @@ class DistcpConfigTest {
 
         config.setRetryCount(10);
         assertEquals(10, config.getRetryCount());
+    }
+
+    @Test
+    void testTimeoutMinutes() {
+        DistcpConfig config = new DistcpConfig();
+
+        // Default value (24 hours)
+        assertEquals(1440, config.getTimeoutMinutes());
+
+        // Custom value (48 hours for very large migrations)
+        config.setTimeoutMinutes(2880);
+        assertEquals(2880, config.getTimeoutMinutes());
+
+        // Short timeout for testing
+        config.setTimeoutMinutes(30);
+        assertEquals(30, config.getTimeoutMinutes());
     }
 }

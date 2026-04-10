@@ -29,12 +29,35 @@ public class JsonStateManager implements StateManager {
 
     @Override
     public void initialize(String sourceCluster, String targetCluster) {
+        // Check if state file already exists (resume scenario)
+        if (stateFilePath.toFile().exists()) {
+            try {
+                this.state = mapper.readValue(stateFilePath.toFile(), MigrationState.class);
+                log.info("Resuming migration from existing state file: {}", stateFilePath);
+                log.info("  Source: {}, Target: {}", state.getSourceCluster(), state.getTargetCluster());
+                log.info("  Already processed: {} tables, Completed: {}, Failed: {}",
+                    state.getTotalCount(), state.getCompletedCount(), state.getFailedCount());
+
+                // Verify clusters match
+                if (!sourceCluster.equals(state.getSourceCluster()) ||
+                    !targetCluster.equals(state.getTargetCluster())) {
+                    log.warn("Cluster names in state file differ from config. " +
+                        "State: {} -> {}, Config: {} -> {}",
+                        state.getSourceCluster(), state.getTargetCluster(),
+                        sourceCluster, targetCluster);
+                }
+                return;
+            } catch (Exception e) {
+                log.warn("Failed to load existing state file, creating new state: {}", e.getMessage());
+            }
+        }
+
+        // Create new state for fresh migration
         this.state = new MigrationState();
         this.state.setSourceCluster(sourceCluster);
         this.state.setTargetCluster(targetCluster);
-        // Persist state immediately so resume works even if JVM crashes before first update
         saveState(state);
-        log.info("Initialized migration state for {} -> {} (persisted to {})",
+        log.info("Initialized new migration state for {} -> {} (persisted to {})",
             sourceCluster, targetCluster, stateFilePath);
     }
 
@@ -99,13 +122,9 @@ public class JsonStateManager implements StateManager {
                 .build();
             state.putResult(database, table, result);
         } else {
-            result = MigrationResult.builder()
-                .database(database)
-                .table(table)
-                .status(status)
-                .dataSize(result.getDataSizeBytes())
-                .build();
-            state.putResult(database, table, result);
+            // Use withStatus to preserve existing information
+            MigrationResult updatedResult = result.withStatus(status);
+            state.putResult(database, table, updatedResult);
         }
         saveState(state);
     }
@@ -133,5 +152,22 @@ public class JsonStateManager implements StateManager {
 
     public MigrationState getState() {
         return state;
+    }
+
+    /**
+     * Check if a table has already been successfully migrated.
+     * Used for resume functionality to skip already completed tables.
+     */
+    public boolean isTableCompleted(String database, String table) {
+        MigrationResult result = state.getResult(database, table);
+        return result != null && result.getStatus() == MigrationStatus.COMPLETED;
+    }
+
+    /**
+     * Check if a table has already been processed (completed or failed).
+     * Used for resume functionality to show status.
+     */
+    public boolean hasTableResult(String database, String table) {
+        return state.getResult(database, table) != null;
     }
 }
