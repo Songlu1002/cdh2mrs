@@ -15,7 +15,6 @@ import java.util.regex.Pattern;
 public class CompatibilityTransformer {
     private static final Logger log = LoggerFactory.getLogger(CompatibilityTransformer.class);
 
-    private static final Pattern HDFS_PATH_PATTERN = Pattern.compile("^hdfs://[^/]+:\\d+");
     private static final Pattern UNIONTYPE_PATTERN = Pattern.compile("UNIONTYPE", Pattern.CASE_INSENSITIVE);
 
     private final MetadataConfig config;
@@ -92,13 +91,7 @@ public class CompatibilityTransformer {
             log.debug("Rewrote location: {} -> {}", location, newLocation);
             return newLocation;
         }
-        // If doesn't match expected pattern, try regex replacement
-        if (HDFS_PATH_PATTERN.matcher(location).find()) {
-            String newLocation = location.replaceFirst(HDFS_PATH_PATTERN.pattern(), targetNamenode);
-            log.debug("Rewrote location (pattern match): {} -> {}", location, newLocation);
-            return newLocation;
-        }
-        log.warn("Location {} does not match source pattern, keeping as-is", location);
+        log.warn("Location {} does not match source pattern {}, keeping as-is", location, sourceNamenode);
         return location;
     }
 
