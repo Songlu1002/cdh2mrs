@@ -128,10 +128,11 @@ public class CompatibilityTransformer {
                         "View " + view.getDatabase() + "." + view.getTableName() +
                         " cannot be migrated automatically. Set migrateViews=true or recreate manually.");
                 case "WARN":
-                    log.warn("View {}.{} will be skipped. Generate DDL for manual recreation.",
+                    log.warn("View {}.{} will be skipped. DDL available for manual recreation.",
                         view.getDatabase(), view.getTableName());
                     if (config.isGenerateViewDdl()) {
-                        generateViewDdl(view);
+                        String viewDdl = generateViewDdl(view);
+                        // DDL is logged at INFO level above, caller can retrieve via CompatibilityTransformer
                     }
                     break;
                 case "SKIP":
@@ -160,7 +161,17 @@ public class CompatibilityTransformer {
         }
     }
 
-    private void generateViewDdl(TableMetadata view) {
+    /**
+     * Generates CREATE VIEW DDL for the given view metadata.
+     * @return the CREATE VIEW DDL string, or null if view has no columns defined
+     */
+    public String generateViewDdl(TableMetadata view) {
+        if (view.getViewOriginalText() == null || view.getViewOriginalText().isEmpty()) {
+            log.warn("View {}.{} has no view original text, cannot generate DDL",
+                view.getDatabase(), view.getTableName());
+            return null;
+        }
+
         StringBuilder ddl = new StringBuilder();
         ddl.append("CREATE VIEW ")
            .append(view.getDatabase())
@@ -179,12 +190,14 @@ public class CompatibilityTransformer {
         ddl.append(" AS ")
            .append(view.getViewOriginalText());
 
-        log.info("Generated VIEW DDL: {}", ddl);
-        // In a full implementation, this would be saved to a file for manual execution
+        String ddlString = ddl.toString();
+        log.info("Generated VIEW DDL for {}.{}:\n{}",
+            view.getDatabase(), view.getTableName(), ddlString);
+        return ddlString;
     }
 
     private TableMetadata cloneTableMetadata(TableMetadata source) {
-        // Create a deep copy
+        // Create a deep copy including HiveColumn objects
         TableMetadata clone = new TableMetadata();
         clone.setDatabase(source.getDatabase());
         clone.setTableName(source.getTableName());
@@ -193,8 +206,33 @@ public class CompatibilityTransformer {
         clone.setInputFormat(source.getInputFormat());
         clone.setOutputFormat(source.getOutputFormat());
         clone.setSerdeClass(source.getSerdeClass());
-        clone.setColumns(new ArrayList<>(source.getColumns()));
-        clone.setPartitionColumns(new ArrayList<>(source.getPartitionColumns()));
+
+        // Deep copy columns to avoid shared references with source
+        List<HiveColumn> columnsCopy = new ArrayList<>();
+        for (HiveColumn col : source.getColumns()) {
+            columnsCopy.add(HiveColumn.builder()
+                .name(col.getName())
+                .type(col.getType())
+                .comment(col.getComment())
+                .position(col.getPosition())
+                .isPartition(col.isPartition())
+                .build());
+        }
+        clone.setColumns(columnsCopy);
+
+        // Deep copy partition columns
+        List<HiveColumn> partitionColsCopy = new ArrayList<>();
+        for (HiveColumn col : source.getPartitionColumns()) {
+            partitionColsCopy.add(HiveColumn.builder()
+                .name(col.getName())
+                .type(col.getType())
+                .comment(col.getComment())
+                .position(col.getPosition())
+                .isPartition(col.isPartition())
+                .build());
+        }
+        clone.setPartitionColumns(partitionColsCopy);
+
         clone.setTableProperties(new HashMap<>(source.getTableProperties()));
         clone.setViewOriginalText(source.getViewOriginalText());
         clone.setView(source.isView());

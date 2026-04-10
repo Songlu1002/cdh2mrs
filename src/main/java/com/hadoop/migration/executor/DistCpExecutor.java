@@ -5,8 +5,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -74,9 +76,51 @@ public class DistCpExecutor {
         }
     }
 
+    /**
+     * Builds the platform-appropriate Hadoop command path.
+     * Handles Windows vs Unix path differences and validates the hadoop binary exists.
+     */
+    private String buildHadoopCommand() {
+        if (hadoopHome == null || hadoopHome.isEmpty()) {
+            throw new IllegalStateException(
+                "HADOOP_HOME environment variable is not set. " +
+                "Please set HADOOP_HOME to the Hadoop installation directory.");
+        }
+
+        // Validate hadoopHome path - prevent command injection
+        Path hadoopPath = Path.of(hadoopHome).normalize();
+        if (!hadoopPath.toFile().exists()) {
+            throw new IllegalStateException(
+                "HADOOP_HOME does not exist: " + hadoopHome);
+        }
+
+        // Use webhdfs protocol - detect OS and use appropriate script
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (os.contains("win")) {
+            // Windows: use hadoop.cmd
+            String hadoopCmd = hadoopPath.resolve("bin").resolve("hadoop.cmd").toString();
+            File hadoopBinary = new File(hadoopCmd);
+            if (!hadoopBinary.exists()) {
+                throw new IllegalStateException(
+                    "Hadoop command not found: " + hadoopCmd + ". " +
+                    "Ensure Hadoop is properly installed on Windows (requires WSL or Windows-native Hadoop).");
+            }
+            return hadoopCmd;
+        } else {
+            // Unix/Linux: use hadoop shell script
+            String hadoopScript = hadoopPath.resolve("bin").resolve("hadoop").toString();
+            File hadoopBinary = new File(hadoopScript);
+            if (!hadoopBinary.exists()) {
+                throw new IllegalStateException(
+                    "Hadoop command not found: " + hadoopScript);
+            }
+            return hadoopScript;
+        }
+    }
+
     public List<String> buildCommand(String sourcePath, String targetPath) {
         List<String> cmd = new ArrayList<>();
-        cmd.add(hadoopHome + "/bin/hadoop");
+        cmd.add(buildHadoopCommand());
         cmd.add("distcp");
         cmd.add("-skipcrccheck");
         cmd.add("-p");

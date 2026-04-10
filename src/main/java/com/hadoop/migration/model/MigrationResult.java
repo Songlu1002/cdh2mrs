@@ -17,6 +17,7 @@ public class MigrationResult {
 
     public MigrationResult() {
         this.startTime = Instant.now().toEpochMilli();
+        this.endTime = -1; // -1 indicates not completed yet
     }
 
     // Builder pattern for convenience
@@ -50,7 +51,12 @@ public class MigrationResult {
     public long getEndTime() { return endTime; }
     public long getDataSizeBytes() { return dataSizeBytes; }
 
-    public long getDurationMs() { return endTime - startTime; }
+    public long getDurationMs() {
+        if (endTime < 0) {
+            return -1; // Migration not completed yet
+        }
+        return endTime - startTime;
+    }
 
     public boolean isSuccess() { return status == MigrationStatus.COMPLETED; }
 }

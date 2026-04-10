@@ -6,6 +6,7 @@ public class DistcpConfig {
     private int retryCount = 3;
     private String sourceProtocol = "webhdfs";
     private String targetProtocol = "webhdfs";
+    private String externalTablePath = "/warehouse/tablespace/external/hive/";
 
     // Getters and setters
     public int getMapTasks() { return mapTasks; }
@@ -22,4 +23,7 @@ public class DistcpConfig {
 
     public String getTargetProtocol() { return targetProtocol; }
     public void setTargetProtocol(String targetProtocol) { this.targetProtocol = targetProtocol; }
+
+    public String getExternalTablePath() { return externalTablePath; }
+    public void setExternalTablePath(String path) { this.externalTablePath = path; }
 }

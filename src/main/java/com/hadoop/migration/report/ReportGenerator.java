@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -236,7 +237,7 @@ public class ReportGenerator {
 
         html.append("</body></html>\n");
 
-        Files.write(Paths.get(htmlPath), html.toString().getBytes());
+        Files.writeString(Paths.get(htmlPath), html.toString(), StandardCharsets.UTF_8);
     }
 
     private String escapeHtml(String text) {

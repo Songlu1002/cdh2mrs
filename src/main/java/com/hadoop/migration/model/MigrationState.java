@@ -1,6 +1,7 @@
 package com.hadoop.migration.model;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +61,8 @@ public class MigrationState {
     public long getEndTime() { return endTime; }
     public void setEndTime(long endTime) { this.endTime = endTime; }
 
-    public Map<String, MigrationResult> getTableResults() { return tableResults; }
+    public Map<String, MigrationResult> getTableResults() {
+        return Collections.unmodifiableMap(tableResults);
+    }
     public void setTableResults(Map<String, MigrationResult> tableResults) { this.tableResults = tableResults; }
 }

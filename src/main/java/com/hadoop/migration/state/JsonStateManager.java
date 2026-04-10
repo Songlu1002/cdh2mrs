@@ -32,8 +32,10 @@ public class JsonStateManager implements StateManager {
         this.state = new MigrationState();
         this.state.setSourceCluster(sourceCluster);
         this.state.setTargetCluster(targetCluster);
-        log.info("Initialized migration state for {} -> {}",
-            sourceCluster, targetCluster);
+        // Persist state immediately so resume works even if JVM crashes before first update
+        saveState(state);
+        log.info("Initialized migration state for {} -> {} (persisted to {})",
+            sourceCluster, targetCluster, stateFilePath);
     }
 
     @Override

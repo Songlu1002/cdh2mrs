@@ -138,6 +138,7 @@ migration:
     mapTasks: 20
     bandwidthMB: 100
     retryCount: 3
+    externalTablePath: "/warehouse/tablespace/external/hive/"  # External table base path
 
   metadata:
     autoConvert: true
@@ -231,6 +232,13 @@ reports/
 | EXTERNAL_TABLE | Yes | Data copied, location rewritten |
 | VIEW | No | Flagged, requires manual migration |
 | Materialized View | No | Not supported in Hive 2.x |
+
+### Known Limitations
+
+| Limitation | Description | Mitigation |
+|------------|-------------|------------|
+| **DistCp Non-Atomicity** | DistCp is not an atomic operation. If interrupted at 90%, partial data remains on target. | Use HDFS snapshots before migration, or manually clean up partial data on failure. |
+| **HADOOP_HOME Trust** | The tool trusts the `HADOOP_HOME` environment variable to point to a legitimate Hadoop installation. | Ensure `HADOOP_HOME` is set by trusted sources only. Do not expose keytab files in the Hadoop bin directory. |
 
 ### Troubleshooting
 
@@ -378,6 +386,7 @@ migration:
     mapTasks: 20          # DistCp 并行任务数
     bandwidthMB: 100      # 带宽限制 (MB/s)
     retryCount: 3        # 重试次数
+    externalTablePath: "/warehouse/tablespace/external/hive/"  # 外部表基础路径
 
   metadata:
     autoConvert: true     # 启用元数据迁移
@@ -470,6 +479,13 @@ reports/
 | EXTERNAL_TABLE | 是 | 数据复制，重写 location |
 | VIEW | 否 | 标记后需手动重建 |
 | 物化视图 | 否 | Hive 2.x 不支持 |
+
+### 已知限制
+
+| 限制 | 说明 | 缓解措施 |
+|------|------|----------|
+| **DistCp 非原子性** | DistCp 不是原子操作。如果在 90% 处中断，目标端会残留部分数据。 | 迁移前使用 HDFS 快照，或在失败时手动清理目标端残留数据。 |
+| **HADOOP_HOME 信任** | 工具信任 `HADOOP_HOME` 环境变量指向合法的 Hadoop 安装目录。 | 确保 `HADOOP_HOME` 仅由可信来源设置，不要将 keytab 文件放在 Hadoop bin 目录中。 |
 
 ### 常见问题
 

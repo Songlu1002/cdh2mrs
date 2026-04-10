@@ -5,6 +5,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.hadoop.migration.auth.KerberosAuthenticator;
 import com.hadoop.migration.config.AppConfig;
 import com.hadoop.migration.config.ClusterConfig;
+import com.hadoop.migration.config.ExecutionConfig;
 import com.hadoop.migration.config.KerberosConfig;
 import com.hadoop.migration.config.MetadataConfig;
 import com.hadoop.migration.config.MigrationTask;
@@ -26,8 +27,6 @@ import java.util.List;
 
 public class Main {
     private static final Logger log = LoggerFactory.getLogger(Main.class);
-
-    private static final String EXTERNAL_HIVE_PATH = "/warehouse/tablespace/external/hive/";
 
     public static void main(String[] args) {
         if (args.length == 0 || "--help".equals(args[0]) || "-h".equals(args[0])) {
@@ -102,6 +101,7 @@ public class Main {
 
             // 5. Execute migration for each task
             boolean overallSuccess = true;
+            int failedTaskCount = 0;
             HiveMetadataExtractor tableLister = null;
 
             // Create metadata extractor for listing tables when "all" is specified
@@ -153,10 +153,17 @@ public class Main {
 
                         if (!result.isSuccess()) {
                             overallSuccess = false;
-                            if (config.getMigration().getExecution() == null ||
-                                !config.getMigration().getExecution().isContinueOnFailure()) {
-                                log.error("Stopping due to failure (continueOnFailure=false)");
-                                break;
+                            failedTaskCount++;
+                            ExecutionConfig execConfig = config.getMigration().getExecution();
+                            if (execConfig != null) {
+                                if (!execConfig.isContinueOnFailure()) {
+                                    log.error("Stopping due to failure (continueOnFailure=false)");
+                                    break;
+                                }
+                                if (execConfig.getMaxFailedTasks() > 0 && failedTaskCount >= execConfig.getMaxFailedTasks()) {
+                                    log.error("Stopping due to reaching maxFailedTasks limit ({})", execConfig.getMaxFailedTasks());
+                                    break;
+                                }
                             }
                         }
                     }
@@ -171,7 +178,7 @@ public class Main {
                 }
             }
 
-            // 6. Generate migration report
+            // 6. Generate migration report (before marking completion so report captures final state)
             log.info("Generating migration report...");
             ReportGenerator reportGenerator = new ReportGenerator(config.getMigration().getOutput().getReportDir());
             String reportPath = reportGenerator.generateReport(
@@ -186,7 +193,7 @@ public class Main {
             // 7. Mark completion
             stateManager.markCompleted();
 
-            // 5. Exit with appropriate code
+            // 8. Exit with appropriate code
             if (overallSuccess) {
                 log.info("=== Migration Completed Successfully ===");
                 System.exit(0);
@@ -287,9 +294,10 @@ public class Main {
             // Build source and target paths
             ClusterConfig source = config.getClusters().getSource();
             ClusterConfig target = config.getClusters().getTarget();
+            String externalPath = config.getMigration().getDistcp().getExternalTablePath();
 
-            String sourcePath = source.getHdfs().getFullPath(EXTERNAL_HIVE_PATH + database + ".db/" + tableName);
-            String targetPath = target.getHdfs().getFullPath(EXTERNAL_HIVE_PATH + database + ".db/" + tableName);
+            String sourcePath = source.getHdfs().getFullPath(externalPath + database + ".db/" + tableName);
+            String targetPath = target.getHdfs().getFullPath(externalPath + database + ".db/" + tableName);
 
             log.info("    Source: {}", sourcePath);
             log.info("    Target: {}", targetPath);
@@ -348,10 +356,6 @@ public class Main {
         ClusterConfig target = config.getClusters().getTarget();
         MetadataConfig metadataConfig = config.getMigration().getMetadata();
 
-        // Get source and target HDFS paths for DistCp
-        String sourcePath = source.getHdfs().getFullPath(EXTERNAL_HIVE_PATH + database + ".db/" + tableName);
-        String targetPath = target.getHdfs().getFullPath(EXTERNAL_HIVE_PATH + database + ".db/" + tableName);
-
         // Get source and target namenodes for location rewriting
         String sourceNamenode = source.getHdfs().getProtocol() + "://" + source.getHdfs().getNamenode() + ":" + source.getHdfs().getPort();
         String targetNamenode = target.getHdfs().getProtocol() + "://" + target.getHdfs().getNamenode() + ":" + target.getHdfs().getPort();
@@ -390,6 +394,10 @@ public class Main {
             log.info("    Transformed metadata: location={}", transformedMetadata.getLocation());
 
             // Step 3: Execute DistCp for data copy
+            // Use actual source location from metadata, target location is rewritten
+            String sourcePath = sourceMetadata.getLocation();
+            String targetPath = transformedMetadata.getLocation();
+
             stateManager.updateTableStatus(database, tableName, MigrationStatus.DATA_COPYING);
             log.info("    Copying data with DistCp...");
             log.info("      Source: {}", sourcePath);

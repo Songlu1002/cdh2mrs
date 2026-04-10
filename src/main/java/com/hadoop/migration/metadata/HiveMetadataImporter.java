@@ -43,9 +43,10 @@ public class HiveMetadataImporter {
 
     /**
      * Returns true if successfully connected to HMS.
+     * Note: This may return false during client creation even if connection will succeed.
      */
     public boolean isConnected() {
-        return connected && hmsClient != null;
+        return hmsClient != null;
     }
 
     private HiveMetaStoreClient createHmsClient() {
