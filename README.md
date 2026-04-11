@@ -52,6 +52,33 @@ A lightweight tool for migrating data from **CDH 7.1.9 (Hive 2.1.1)** to **Huawe
 | WebHDFS | Must be enabled on both clusters |
 | Kerberos | Keytab and krb5.conf if Kerberos auth |
 
+### Testing & Quality
+
+| Metric | Value |
+|--------|-------|
+| Unit Tests | 121 |
+| Test Coverage | 55% |
+| Packages Tested | 8/8 |
+
+**Test Coverage by Package:**
+| Package | Coverage |
+|---------|---------|
+| com.hadoop.migration.config | 97% |
+| com.hadoop.migration.report | 95% |
+| com.hadoop.migration.model | 93% |
+| com.hadoop.migration (Main) | 13% |
+| com.hadoop.migration.state | 47% |
+| com.hadoop.migration.metadata | 43% |
+| com.hadoop.migration.executor | 32% |
+| com.hadoop.migration.auth | 42% |
+
+**Run Tests:**
+```bash
+mvn test                    # Run all tests
+mvn verify                  # Run tests + coverage report
+mvn test -Dtest=MainTest   # Run specific test class
+```
+
 ### Build
 
 ```bash
@@ -154,8 +181,6 @@ migration:
     stateFile: "state/migration-state.json"
     reportDir: "reports/"
 ```
-
-### Usage
 
 ### Usage
 
@@ -300,6 +325,33 @@ reports/
 | WebHDFS | 两个集群都必须启用 |
 | Kerberos | 如需认证，提供 keytab 和 krb5.conf |
 
+### 测试与质量
+
+| 指标 | 数值 |
+|------|------|
+| 单元测试 | 121 |
+| 测试覆盖率 | 55% |
+| 已测包数量 | 8/8 |
+
+**各包测试覆盖率:**
+| 包 | 覆盖率 |
+|----|-------|
+| com.hadoop.migration.config | 97% |
+| com.hadoop.migration.report | 95% |
+| com.hadoop.migration.model | 93% |
+| com.hadoop.migration (Main) | 13% |
+| com.hadoop.migration.state | 47% |
+| com.hadoop.migration.metadata | 43% |
+| com.hadoop.migration.executor | 32% |
+| com.hadoop.migration.auth | 42% |
+
+**运行测试:**
+```bash
+mvn test                    # 运行所有测试
+mvn verify                  # 运行测试 + 覆盖率报告
+mvn test -Dtest=MainTest   # 运行特定测试类
+```
+
 ### 构建
 
 ```bash
@@ -402,8 +454,6 @@ migration:
     stateFile: "state/migration-state.json"
     reportDir: "reports/"
 ```
-
-### 使用方法
 
 ### 使用方法
 

@@ -238,4 +238,229 @@ class CompatibilityTransformerTest {
 
         assertNull(result.getLocation());
     }
+
+    @Test
+    void testHandleViewWithSkipAction() {
+        config.setMigrateViews(false);
+        config.setUnsupportedAction("SKIP");
+        TableMetadata view = TableMetadata.builder()
+            .database("db1")
+            .tableName("test_view")
+            .isView(true)
+            .viewOriginalText("SELECT 1")
+            .build();
+
+        // Should not throw, just skip
+        TableMetadata result = transformer.transform(view);
+        assertNotNull(result);
+    }
+
+    @Test
+    void testHandleViewWithFailAction() {
+        config.setMigrateViews(false);
+        config.setUnsupportedAction("FAIL");
+        TableMetadata view = TableMetadata.builder()
+            .database("db1")
+            .tableName("test_view")
+            .isView(true)
+            .viewOriginalText("SELECT 1")
+            .build();
+
+        assertThrows(UnsupportedOperationException.class, () -> {
+            transformer.transform(view);
+        });
+    }
+
+    @Test
+    void testHandleViewWithWarnAction() {
+        config.setMigrateViews(false);
+        config.setUnsupportedAction("WARN");
+        config.setGenerateViewDdl(true);
+        TableMetadata view = TableMetadata.builder()
+            .database("db1")
+            .tableName("test_view")
+            .isView(true)
+            .viewOriginalText("SELECT * FROM table1")
+            .build();
+
+        // Should not throw but should return the view
+        TableMetadata result = transformer.transform(view);
+        assertNotNull(result);
+    }
+
+    @Test
+    void testHandleUnsupportedFeaturesWithSkipAction() {
+        config.setUnsupportedAction("SKIP");
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .columns(Arrays.asList(
+                HiveColumn.builder().name("col1").type("UNIONTYPE<string>").build()
+            ))
+            .build();
+
+        // Should not throw
+        TableMetadata result = transformer.transform(source);
+        assertNotNull(result);
+    }
+
+    @Test
+    void testHandleUnsupportedFeaturesWithFailAction() {
+        config.setUnsupportedAction("FAIL");
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .columns(Arrays.asList(
+                HiveColumn.builder().name("col1").type("UNIONTYPE<string,int>").build()
+            ))
+            .build();
+
+        assertThrows(UnsupportedOperationException.class, () -> {
+            transformer.transform(source);
+        });
+    }
+
+    @Test
+    void testHandleUnsupportedFeaturesWithWarnAction() {
+        config.setUnsupportedAction("WARN");
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .columns(Arrays.asList(
+                HiveColumn.builder().name("union_col").type("UNIONTYPE<string>").build()
+            ))
+            .build();
+
+        // Should not throw with WARN
+        TableMetadata result = transformer.transform(source);
+        assertNotNull(result);
+    }
+
+    @Test
+    void testRewriteLocationsDisabled() {
+        config.setRewriteLocations(false);
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .location("hdfs://cdh-nn:8020/warehouse/db1.db/table1")
+            .build();
+
+        TableMetadata result = transformer.transform(source);
+
+        // Location should NOT be rewritten when rewriteLocations is false
+        assertEquals("hdfs://cdh-nn:8020/warehouse/db1.db/table1", result.getLocation());
+    }
+
+    @Test
+    void testAddTransactionalPropDisabled() {
+        config.setAddTransactionalProp(false);
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .tableType("MANAGED_TABLE")
+            .build();
+
+        TableMetadata result = transformer.transform(source);
+
+        // Should NOT have transactional property when disabled
+        assertNull(result.getTableProperties().get("transactional"));
+    }
+
+    @Test
+    void testClearStatisticsDisabled() {
+        config.setClearStatistics(false);
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .tableProperties(new java.util.HashMap<>())
+            .build();
+        source.getTableProperties().put("numFiles", "10");
+        source.getTableProperties().put("numRows", "1000");
+
+        TableMetadata result = transformer.transform(source);
+
+        // Statistics should NOT be cleared when disabled
+        assertEquals("10", result.getTableProperties().get("numFiles"));
+        assertEquals("1000", result.getTableProperties().get("numRows"));
+    }
+
+    @Test
+    void testUpgradeBucketingVersionDisabled() {
+        config.setUpgradeBucketingVersion(false);
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .tableProperties(new java.util.HashMap<>())
+            .build();
+        source.getTableProperties().put("bucket_count", "10");
+
+        TableMetadata result = transformer.transform(source);
+
+        // Should NOT upgrade bucketing version when disabled
+        assertNull(result.getTableProperties().get("bucketing_version"));
+    }
+
+    @Test
+    void testClearStatisticsAllKeys() {
+        config.setClearStatistics(true);
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .tableProperties(new java.util.HashMap<>())
+            .build();
+        source.getTableProperties().put("numFiles", "5");
+        source.getTableProperties().put("numPartitions", "3");
+        source.getTableProperties().put("numRows", "100");
+        source.getTableProperties().put("rawDataSize", "1000");
+        source.getTableProperties().put("totalSize", "10000");
+        source.getTableProperties().put("COLUMN_STATS_ACCURATE", "true");
+        source.getTableProperties().put("numFilesErasureCoding", "0");
+
+        TableMetadata result = transformer.transform(source);
+
+        assertFalse(result.getTableProperties().containsKey("numFiles"));
+        assertFalse(result.getTableProperties().containsKey("numPartitions"));
+        assertFalse(result.getTableProperties().containsKey("numRows"));
+        assertFalse(result.getTableProperties().containsKey("rawDataSize"));
+        assertFalse(result.getTableProperties().containsKey("totalSize"));
+        assertFalse(result.getTableProperties().containsKey("COLUMN_STATS_ACCURATE"));
+        assertFalse(result.getTableProperties().containsKey("numFilesErasureCoding"));
+    }
+
+    @Test
+    void testTransformPreservesOtherProperties() {
+        config.setAddTransactionalProp(true);
+        config.setClearStatistics(true);
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .tableType("MANAGED_TABLE")
+            .tableProperties(new java.util.HashMap<>())
+            .build();
+        source.getTableProperties().put("custom.property", "custom-value");
+        source.getTableProperties().put("owner", "hadoop");
+
+        TableMetadata result = transformer.transform(source);
+
+        // Should preserve custom properties
+        assertEquals("custom-value", result.getTableProperties().get("custom.property"));
+        assertEquals("hadoop", result.getTableProperties().get("owner"));
+        // While adding transactional
+        assertEquals("false", result.getTableProperties().get("transactional"));
+    }
+
+    @Test
+    void testEmptyLocation() {
+        config.setRewriteLocations(true);
+        TableMetadata source = TableMetadata.builder()
+            .database("db1")
+            .tableName("table1")
+            .location("")
+            .build();
+
+        TableMetadata result = transformer.transform(source);
+
+        // Empty string should be preserved
+        assertEquals("", result.getLocation());
+    }
 }

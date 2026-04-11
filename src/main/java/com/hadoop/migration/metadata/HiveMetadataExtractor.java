@@ -169,7 +169,11 @@ public class HiveMetadataExtractor {
 
     public void close() {
         if (hmsClient != null) {
-            hmsClient.close();
+            try {
+                hmsClient.close();
+            } catch (Exception e) {
+                log.warn("Error closing HMS client for {}", clusterConfig.getName(), e);
+            }
         }
     }
 }

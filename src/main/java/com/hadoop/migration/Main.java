@@ -289,7 +289,8 @@ public class Main {
                 return List.of();
             }
         } else {
-            return task.getTables();
+            List<String> tables = task.getTables();
+            return tables != null ? tables : List.of();
         }
     }
 
@@ -419,6 +420,8 @@ public class Main {
         HiveMetadataExtractor extractor = null;
         HiveMetadataImporter importer = null;
         DistCpExecutor executor = null;
+        String targetPath = null;
+        boolean dataCopied = false;
 
         try {
             // Step 1: Extract metadata from source
@@ -452,7 +455,7 @@ public class Main {
             // Step 3: Execute DistCp for data copy
             // Use actual source location from metadata, target location is rewritten
             String sourcePath = sourceMetadata.getLocation();
-            String targetPath = transformedMetadata.getLocation();
+            targetPath = transformedMetadata.getLocation();
 
             stateManager.updateTableStatus(database, tableName, MigrationStatus.DATA_COPYING);
             log.info("    Copying data with DistCp...");
@@ -473,6 +476,7 @@ public class Main {
                     .build();
             }
 
+            dataCopied = true;
             log.info("    Data copy completed successfully");
 
             // Step 4: Import metadata to target
@@ -497,7 +501,9 @@ public class Main {
                     .status(MigrationStatus.COMPLETED)
                     .build();
             } else {
-                log.error("    Table {}.{} was not created", database, tableName);
+                // Table creation failed after data copy - need to clean up
+                log.error("    Table {}.{} was not created, cleaning up data", database, tableName);
+                cleanupOnFailure(executor, targetPath);
                 stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
                 return MigrationResult.builder()
                     .database(database)
@@ -520,6 +526,10 @@ public class Main {
 
         } catch (Exception e) {
             log.error("    Migration failed: {}", e.getMessage());
+            // If data was copied but migration failed, clean up orphaned data
+            if (dataCopied && targetPath != null) {
+                cleanupOnFailure(executor, targetPath);
+            }
             stateManager.updateTableStatus(database, tableName, MigrationStatus.FAILED);
             return MigrationResult.builder()
                 .database(database)
@@ -550,6 +560,25 @@ public class Main {
                 } catch (Exception e) {
                     log.warn("Error closing metadata importer", e);
                 }
+            }
+        }
+    }
+
+    /**
+     * Clean up orphaned data on target cluster when migration fails after data copy.
+     */
+    private static void cleanupOnFailure(DistCpExecutor executor, String targetPath) {
+        if (executor != null && targetPath != null) {
+            try {
+                log.info("    Attempting to clean up orphaned data at: {}", targetPath);
+                boolean cleanupSuccess = executor.cleanupTarget(targetPath);
+                if (cleanupSuccess) {
+                    log.info("    Successfully cleaned up orphaned data");
+                } else {
+                    log.warn("    Failed to clean up orphaned data - manual cleanup may be required for: {}", targetPath);
+                }
+            } catch (Exception e) {
+                log.error("    Exception during cleanup: {}", e.getMessage());
             }
         }
     }

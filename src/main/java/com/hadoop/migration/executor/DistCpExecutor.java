@@ -8,6 +8,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,41 +40,69 @@ public class DistCpExecutor {
     public ExecutionResult execute(String sourcePath, String targetPath) {
         log.info("Starting DistCp: {} -> {}", sourcePath, targetPath);
 
-        List<String> command = buildCommand(sourcePath, targetPath);
-        log.debug("Command: {}", String.join(" ", command));
+        int maxRetries = config.getRetryCount();
+        ExecutionResult lastResult = null;
 
-        try {
-            ProcessBuilder pb = new ProcessBuilder(command)
-                .redirectErrorStream(true);
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                    log.debug("DistCp: {}", line);
+        for (int attempt = 1; attempt <= maxRetries + 1; attempt++) {
+            if (attempt > 1) {
+                // Exponential backoff: 10s, 20s, 40s, ...
+                long backoffMs = 10_000L * (1L << (attempt - 2));
+                log.info("Retry attempt {}/{} after {}ms backoff", attempt - 1, maxRetries, backoffMs);
+                try {
+                    Thread.sleep(backoffMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return ExecutionResult.failure(-1, "Interrupted during retry backoff");
                 }
             }
 
-            boolean finished = process.waitFor(config.getTimeoutMinutes(), TimeUnit.MINUTES);
-            int exitCode = finished ? process.exitValue() : -1;
+            List<String> command = buildCommand(sourcePath, targetPath);
+            log.debug("Command: {}", String.join(" ", command));
 
-            if (exitCode == 0) {
-                log.info("DistCp completed successfully");
-                return ExecutionResult.success(output.toString());
-            } else {
-                log.error("DistCp failed with exit code {}", exitCode);
-                return ExecutionResult.failure(exitCode, output.toString());
+            try {
+                ProcessBuilder pb = new ProcessBuilder(command)
+                    .redirectErrorStream(true);
+                Process process = pb.start();
+
+                StringBuilder output = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        output.append(line).append("\n");
+                        log.debug("DistCp: {}", line);
+                    }
+                }
+
+                boolean finished = process.waitFor(config.getTimeoutMinutes(), TimeUnit.MINUTES);
+                int exitCode;
+                if (!finished) {
+                    // Timeout - forcibly terminate to prevent zombie process
+                    process.destroyForcibly();
+                    log.error("DistCp timed out after {} minutes on attempt {}", config.getTimeoutMinutes(), attempt);
+                    exitCode = -1;
+                } else {
+                    exitCode = process.exitValue();
+                }
+
+                if (exitCode == 0) {
+                    log.info("DistCp completed successfully");
+                    return ExecutionResult.success(output.toString());
+                } else {
+                    log.warn("DistCp attempt {} failed with exit code {}", attempt, exitCode);
+                    lastResult = ExecutionResult.failure(exitCode, output.toString());
+                }
+            } catch (IOException e) {
+                log.error("Failed to execute DistCp on attempt {}", attempt, e);
+                lastResult = ExecutionResult.failure(-1, e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return ExecutionResult.failure(-1, "Interrupted");
             }
-        } catch (IOException e) {
-            log.error("Failed to execute DistCp", e);
-            return ExecutionResult.failure(-1, e.getMessage());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return ExecutionResult.failure(-1, "Interrupted");
         }
+
+        log.error("DistCp failed after {} attempts", maxRetries + 1);
+        return lastResult;
     }
 
     /**
@@ -122,6 +151,10 @@ public class DistCpExecutor {
         List<String> cmd = new ArrayList<>();
         cmd.add(buildHadoopCommand());
         cmd.add("distcp");
+
+        // Use configured protocol - DistCp only needs source protocol flag
+        String sourceProtocol = config.getSourceProtocol();
+
         cmd.add("-skipcrccheck");
         cmd.add("-p");
         cmd.add("-update");
@@ -131,10 +164,102 @@ public class DistCpExecutor {
         cmd.add(String.valueOf(config.getMapTasks()));
         cmd.add("-bandwidth");
         cmd.add(String.valueOf(config.getBandwidthMB()));
-        cmd.add("-webhdfs");
+
+        // Always add source protocol flag to ensure correct protocol is used
+        cmd.add("-" + sourceProtocol.toLowerCase());
+
         cmd.add(sourcePath);
         cmd.add(targetPath);
         return cmd;
+    }
+
+    /**
+     * Deletes the target path on HDFS using WebHDFS.
+     * Used for cleanup when migration fails after data copy.
+     * @param targetPath the HDFS path to delete
+     * @return true if deletion succeeded, false otherwise
+     */
+    public boolean cleanupTarget(String targetPath) {
+        if (targetPath == null || targetPath.isEmpty()) {
+            log.warn("No target path provided for cleanup, skipping");
+            return false;
+        }
+
+        log.info("Cleaning up orphaned data at target: {}", targetPath);
+
+        try {
+            String hadoopCmd = buildHadoopCommand();
+            // Extract the actual path using proper URI parsing to prevent path traversal
+            String pathToDelete;
+            try {
+                URI uri = new URI(targetPath);
+                pathToDelete = uri.getPath();
+                if (pathToDelete == null || pathToDelete.isEmpty()) {
+                    log.warn("Could not extract valid path from URI: {}, using as-is", targetPath);
+                    pathToDelete = targetPath;
+                }
+            } catch (Exception e) {
+                // Fallback: if URI parsing fails, use the path as-is
+                // Only use the part after protocol if it looks like a path
+                if (targetPath.contains("://")) {
+                    String[] parts = targetPath.split("://", 2);
+                    if (parts.length > 1 && parts[1].contains("/")) {
+                        pathToDelete = "/" + parts[1].substring(parts[1].indexOf("/") + 1);
+                    } else {
+                        pathToDelete = targetPath;
+                    }
+                } else {
+                    pathToDelete = targetPath;
+                }
+            }
+
+            // Validate path doesn't contain suspicious patterns
+            if (pathToDelete.contains("..") || pathToDelete.contains("~")) {
+                log.error("Suspicious path pattern detected in cleanup target: {}", pathToDelete);
+                return false;
+            }
+
+            List<String> command = List.of(
+                hadoopCmd, "dfs", "-rm", "-r", "-skipTrash", pathToDelete
+            );
+
+            log.debug("Cleanup command: {}", String.join(" ", command));
+
+            ProcessBuilder pb = new ProcessBuilder(command)
+                .redirectErrorStream(true);
+            Process process = pb.start();
+
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                    log.debug("Cleanup: {}", line);
+                }
+            }
+
+            boolean finished = process.waitFor(5, TimeUnit.MINUTES);
+            if (!finished) {
+                // Process timed out - forcibly terminate to prevent zombie process
+                process.destroyForcibly();
+                log.error("Cleanup timed out after 5 minutes for path: {}", pathToDelete);
+                return false;
+            }
+            int exitCode = process.exitValue();
+
+            if (exitCode == 0) {
+                log.info("Cleanup completed successfully for: {}", targetPath);
+                return true;
+            } else {
+                log.warn("Cleanup failed for {} with exit code {}: {}",
+                    targetPath, exitCode, output.toString());
+                return false;
+            }
+        } catch (Exception e) {
+            log.error("Failed to cleanup target path: {}", targetPath, e);
+            return false;
+        }
     }
 
     public static class ExecutionResult {

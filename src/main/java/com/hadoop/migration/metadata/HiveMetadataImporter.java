@@ -107,7 +107,14 @@ public class HiveMetadataImporter {
             db.setName(dbName);
             db.setDescription(description != null ? description : "");
             getHmsClient().createDatabase(db);
-            log.info("Created database: {}", dbName);
+
+            // Verify database was actually created
+            try {
+                getHmsClient().getDatabase(dbName);
+                log.info("Created database: {}", dbName);
+            } catch (Exception e) {
+                throw new RuntimeException("Database creation failed verification for: " + dbName, e);
+            }
         } catch (Exception e) {
             // Fallback: check if error indicates database already exists
             String msg = e.getMessage();
@@ -166,7 +173,11 @@ public class HiveMetadataImporter {
 
     public void close() {
         if (hmsClient != null) {
-            hmsClient.close();
+            try {
+                hmsClient.close();
+            } catch (Exception e) {
+                log.warn("Error closing HMS client for {}", clusterConfig.getName(), e);
+            }
         }
     }
 }
